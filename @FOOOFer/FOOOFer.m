@@ -131,6 +131,20 @@ classdef FOOOFer < handle
     end
 
     methods
+        
+        obj = fit(obj, freqs, spectrum, include_freq_range, exclude_freq_range, apriori_peak_range)
+        
+    end
+
+    methods (Access = protected)
+
+        estimates = estimate_aperiodic_params(obj, x, y)
+        estimates = estimate_periodic_params(obj, x, y)
+
+    end
+
+    
+    methods
 
         function obj = FOOOFer(varargin)
             % Constructor for O1OFFitter
@@ -152,143 +166,7 @@ classdef FOOOFer < handle
             
         end
 
-        function fit( ...
-                obj, ...
-                freqs_full, ...
-                spectrum_full, ...
-                freq_range_to_fit, ...
-                exclude_freq_range, ...
-                apriori_peak_range...
-                )
-            % Main fitting method.
-            
-            if nargin < 4 || isempty(freq_range_to_fit)
-                freq_range_to_fit = gen.range(freqs_full);
-            end
-
-            if nargin < 5
-                exclude_freq_range = []; 
-            end
-
-            if nargin < 6
-                apriori_peak_range = [];
-            end
-
-            % --- Preparations ---
-            isFreqIn = freqs_full~=0;
-
-            isFreqExcld = false(size(isFreqIn));
-            for ii = 1:size(exclude_freq_range,1)
-                isFreqExcld = isFreqExcld | gen.ifwithin(freqs_full, exclude_freq_range(ii,:));
-            end         
-            
-
-            if ~isempty(freq_range_to_fit)
-
-                isFreqIn = isFreqIn & gen.ifwithin(freqs_full, freq_range_to_fit);
-
-            end
-
-            analysis_freqs = freqs_full(isFreqIn & ~isFreqExcld);
-            original_spectrum = spectrum_full(isFreqIn & ~isFreqExcld);
-            analysis_spectrum = original_spectrum;
-
-            isFreqExcldFromAp = false(size(analysis_freqs));
-            for ii = 1:size(exclude_freq_range,1)
-                isFreqExcldFromAp = isFreqExcldFromAp | gen.ifwithin(analysis_freqs, apriori_peak_range(ii,:));
-            end
-
-            obj.iter = 0; % Step 3 is the iterative fine-tuning of Step 1 and 2
-            
-            isConverged = false;
-            while obj.iter <= obj.max_refit_iterations && ~isConverged
-
-                
-                % --- Step 1: Initial Aperiodic Fit (Robust) ---
-                if obj.iter <= 1
-                    % In Steps 0 & 1 re-estimate aperiodic params from
-                    % data which is 'original_spectrum' in #S0 and
-                    % 'original_spectrum/periodic_fit' in #S1
-                    ap_param_guesses = obj.estimate_aperiodic_params_from_data(analysis_freqs, analysis_spectrum);
-                    
-                else
-
-                    % For the subsequent fits, always use the previously
-                    % fitted parameters.
-                    ap_param_guesses = ap_param_fits;
-                end
-
-                ap_param_guesses = num2cell(ap_param_guesses);
-                obj.update('seeds', 'aperiodic', ap_param_guesses{:});
-
-
-                ap_param_fits = obj.perform_aperiodic_fit_(analysis_freqs(~isFreqExcldFromAp), analysis_spectrum(~isFreqExcldFromAp), true);
-                ap_fit = obj.aperiodic_function(ap_param_fits,analysis_freqs);
-                flattened_spectrum = log10(original_spectrum) - log10(ap_fit);
-
-                if obj.iter > 1
-
-                    p_param_guesses = p_param_fits;
-                    % p_param_guesses = p_param_fits;                    
-                    % flattened_spectrumN = flattened_spectrum - obj.predict(analysis_freqs, 'periodic', p_param_fits);
-                    % n_peaks_fit_prev = obj.fits.n_peaks(obj.current_row_idx_-1);
-                    % obj.max_n_peaks = obj.max_n_peaks - n_peaks_fit_prev;
-                    % if obj.max_n_peaks
-                    %     p_param_guesses = estimate_periodic_params_from_data(obj, analysis_freqs, flattened_spectrumN);
-                    %     [pN, bN] = obj.rearrange_periodic_params(p_param_guesses);
-                    %     [prev_pN, prev_bN] = obj.rearrange_periodic_params(p_param_fits);
-                    %     pN = [prev_pN; pN];
-                    %     p_param_guesses = [pN(:); prev_bN];
-                    % else
-                    %     p_param_guesses = p_param_fits;
-                    % end                    
-                    % 
-                    % obj.max_n_peaks = obj.max_n_peaks + n_peaks_fit_prev;
-
-                else
-
-                    p_param_guesses = estimate_periodic_params_from_data(obj, analysis_freqs, flattened_spectrum);
-
-                end
-
-
-                [pN, bN] = obj.rearrange_periodic_params(p_param_guesses);
-                obj.update('seeds', 'periodic', pN(:,1), pN(:,2), pN(:,3), bN);
-
-                % --- Step 2: Fit Periodic Components Identification Iteratively, adding one peak at a time to the model ---
-                p_param_fits = obj.perform_periodic_fit_(p_param_guesses, analysis_freqs, flattened_spectrum);
-                
-                p_fit = obj.predict(analysis_freqs, 'periodic');               
-                p_fit_log = log10(p_fit);
-                % Goodness of Fit and convergence of GOF
-                n_param = numel(p_param_fits) + numel(ap_param_fits);
-                [R2, AIC, BIC] = obj.calculate_gof(log10(original_spectrum), log10(ap_fit)+p_fit_log, n_param);
-                obj.update('gof', n_param, R2, AIC, BIC);
-                % --- Step 3: Check convergence and GOF
-                if obj.iter > 1 
-                    
-                    params_conv = all(table2array(obj.isParametersConverged));
-                    gof_conv = obj.isGOFConverged.aic;    
-
-                    if params_conv && gof_conv
-
-                        fprintf("Converged at Iteration %d.\n", obj.iter);
-                        isConverged = true;
-                        continue;
-
-                    end
-                    % discard non-converged peaks from the next estimate
-                    % if diverging
-
-                end                
-
-                analysis_spectrum = 10.^(log10(original_spectrum) - p_fit_log);
-                               
-               obj.next();
-               
-            end
-
-        end % fit()     
+             
         
         function next(obj)
 
@@ -555,39 +433,7 @@ classdef FOOOFer < handle
 
     methods (Access = protected)
        
-        function estimates = estimate_aperiodic_params_from_data(obj, x, y)
-
-            x(x==0) = [];
-            isInitialFreqs = x < 1;
-            
-            if sum(isInitialFreqs) == 0
-                interceptN = mean(log10(y)) + 2*3.33*std(log10(y));
-                
-
-            else
-                
-                interceptN = max(log10(y(isInitialFreqs)));
-
-            end
-
-            mdl_for_exp = fitlm(log10(x),log10(y));
-            exponentN = -mdl_for_exp.Coefficients.Estimate(2);
-            interceptN = 10.^ interceptN;
-
-            % diffs = diff(y);           
-
-            kneeN = 0;
-            estimates = [interceptN, exponentN,  kneeN];
-
-            if kneeN < 3
-
-                estimates(end) = [];
-
-            end
-            estimates_in = num2cell(estimates);
-            obj.update('seeds', 'aperiodic', estimates_in{:});
-
-        end
+       
         
         function aperiodic_params = perform_aperiodic_fit_(obj, freqs_in, spectrum_in_linear, is_robust)
 
@@ -688,45 +534,7 @@ classdef FOOOFer < handle
 
             obj.update('fits', 'periodic', bics(isPeakIn), fitted_params(:,1), fitted_params(:,2), fitted_params(:,3), b_est);
             fitted_params = [fitted_params(:); b_est];
-        end
-
-        function init_params = estimate_periodic_params_from_data(obj, freqs_in, flattened_spectrum)
-
-            isFreqInRange = gen.ifwithin(freqs_in, obj.peak_freq_range);
-            
-            [init_amp, init_cf, init_bw, init_p] = obj.find_peaks_(freqs_in(isFreqInRange), flattened_spectrum(isFreqInRange));
-            init_b = mean(init_amp - init_p); % baseline
-
-            init_amp = init_p; % baseline corrected amplitude
-            init_sigma = init_bw / (2*sqrt(2*log(2))); % bw to sigma
-            init_params = [init_amp, init_cf, init_sigma];
-            init_params = sortrows(init_params, 1, "descend");
-            
-            init_params = [init_params(:); init_b];  
-
-        end
-
-        function [amp,cf,bw,p] = find_peaks_(obj, freqs_in, flattened_spectrum)
-
-            
-            % Linear interp if freqs contain breaks
-            if ~isscalar(unique(diff(freqs_in)))
-
-                [flattened_spectrum, freqs_in] = obj.interpolate_breaks_(flattened_spectrum, freqs_in);
-
-            end
-            fq_res = mode(diff(freqs_in));
-            n_med_bins = floor(1/fq_res);
-            flattened_spectrum = medfilt1(flattened_spectrum, n_med_bins); 
-                        
-            [amp, cf, bw,p] = findpeaks(flattened_spectrum, freqs_in, ...
-                MinPeakDistance = obj.peak_proximity_threshold, ...
-                MinPeakProminence=2*1.4826*mad(flattened_spectrum),...
-                MinPeakWidth = obj.min_peak_width,...
-                NPeaks=obj.max_n_peaks);
-
-
-        end
+        end               
 
         function [ap_conv, p_conv] = calculate_parameter_convergence(obj)
 
@@ -989,15 +797,7 @@ classdef FOOOFer < handle
 
         end
 
-        function [y_interp, x_interp] = interpolate_breaks_(y, x)
-
-            step = mode(diff(x));
-
-            x_interp = (x(1):step:x(end))';
-            y_interp = interp1(x, y, x_interp, 'linear');
-            
-
-        end
+        
 
         function [R2, AIC, BIC] = calculate_gof(y, y_hat, n_param)
 
