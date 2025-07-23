@@ -6,55 +6,32 @@ classdef FOOOFer < handle
 
     properties
 
-        % Aperiodic Fit Settings
+        % Peak Fit Settings               
+        max_refit_n_iter = 10
+        min_peak_width (1,1) double = 1        
+        max_n_peaks (1,1) double = 5              % Maximum number of peaks to fit per pass        
+        min_peak_distance (1,1) double = 1.0 % Minimum Hz separation to keep distinct peaks
+        min_peak_frequency (1,1) double
+        max_peak_frequency (1,1) double        
+        excluded_frequencies (:,2) double = []
+                
+        results = struct( ...            
+            iter = [], type = [], seed = [], ...
+            fit = [], fit_flag = [], ...
+            fit_n_iter = [], fit_n_func_eval = [], fit_n_pcg_iter = [],...
+            gof = [], gof_metric = [], modelSurvived = [])
 
-        max_irls_iterations (1,1) double = 10       % Max iterations for IRLS in robust aperiodic fit
-        irls_tolerance (1,1) double = 1e-5        % Tolerance for IRLS convergence    
+        verbose = true;
 
-        % Peak Fit Settings
-        flattened_spectrum_smoothing_factor_in_hz (1,1) double = 3 % to find the potential peaks smooths the flattened spectrum using median filtering
-        
-        peak_freq_range (1,2) double = [.75, 100]
-        peak_threshold_sd (1,1) double = 1.0      % Std. dev. above mean of flattened spec to detect peak
-        min_peak_height (1,1) double = 0.0        % Absolute minimum height of a peak on flattened spectrum (linear units)
-        min_peak_width (1,1) double = 1
-        peak_width_limits (:,2) double = [0, 4] % Each row is [min_width, max_width] for a pass
-        max_n_peaks (1,1) double = 8              % Maximum number of peaks to fit per pass
-        contains_narrow_peaks (1,1) logical = false % If true, peak bandwidth (BW) is fitted in log10 space.
-        peak_proximity_threshold (1,1) double = 3.0 % Minimum Hz separation to keep distinct peaks
-        
-        % Step 4 Iterative Refinement Settings
-        max_refit_iterations (1,1) double = 20    % Max iterations for Step 4 refinement loop
-        convergence_tolerance_fits (1,1) double = 1e-3 
-        convergence_tolerance_gof (1,1) double = 1e-4     
+        % fmincon options
+        max_func_eval = 50
+        max_fit_iter = 50;
 
-        % Fitting Options
-        lsq_options % Options for lsqcurvefit
+    end
 
-        % Properties to be updated within the iterative fitting loop
+    properties (SetAccess = protected)
+
         iter = 0
-        seeds = table(Size = [1, numel(FOOOFer.seeds_vars_)],...
-            VariableNames = FOOOFer.seeds_vars_, ...
-            VariableTypes = FOOOFer.seeds_var_types_)
-        fits = table(Size = [1, numel(FOOOFer.fits_vars_)],...
-            VariableNames = FOOOFer.fits_vars_, ...
-            VariableTypes = FOOOFer.fits_var_types_)
-        gof = table(Size = [1, numel(FOOOFer.gof_vars_)],...
-            VariableNames = FOOOFer.gof_vars_, ...
-            VariableTypes = FOOOFer.gof_var_types_)
-
-        % gof table = table(...
-        %     'VariableNames', {'R2', 'AIC', 'BIC'})
-
-        % --- Results from the final iteration of the fit ---
-        iteration (1,1) double = 0        
-        R_squared (1,1) double = NaN
-        MSE (1,1) double = NaN
-        aperiodic_converged (1,1) logical = false
-        periodic_converged (1,1) logical = false
-        gof_converged (1,1) logical = false
-        step4_converged_overall (1,1) logical = false
-        error_message char = ''
 
     end
 
@@ -81,24 +58,6 @@ classdef FOOOFer < handle
         free_ap_parameters = {'intercept', 'exponent', 'knee'}
         free_p_parameters = {'amplitude', 'center', 'bandwidth', 'baseline'}
     
-    end
-
-    properties (Access = protected)
-
-        %%
-        % Parameters estimates, rows are the results of each iteration
-        intercept_ (:,1) = []
-        knee_ (:,1) = []
-        exponent_ (:,1) = []
-
-        center_frequency_ (:,1) = {}
-        amplitude_ (:,1) = {}
-        bandwidth_ (:,1) = {}
-        baseline_ (:,1) = {}
-        parameter_convergence_ table %= table(...
-            % 'VariableNames',{'intercept', 'exponent', 'knee','amplitude','center_frequency','bandwidth','baseline'})
-
-        
     end
 
     properties (Dependent)
@@ -132,7 +91,7 @@ classdef FOOOFer < handle
 
     methods
         
-        obj = fit(obj, freqs, spectrum, include_freq_range, exclude_freq_range, apriori_peak_range)
+         [results, ap_fitter, p_fitter] = fit(obj, freqs, spectrum, include_freq_range, exclude_freq_range, apriori_peak_range)
         
     end
 
@@ -148,7 +107,7 @@ classdef FOOOFer < handle
 
         function obj = FOOOFer(varargin)
             % Constructor for O1OFFitter
-            obj.lsq_options = optimoptions('lsqcurvefit', 'Display', 'off', 'TolFun', 1e-6, 'TolX', 1e-6, 'MaxIterations', 1000, 'MaxFunctionEvaluations', 3000);
+            
             if nargin > 0
                 if mod(nargin, 2) ~= 0
                     error('FOOOFer:InvalidInput', 'Invalid number of input arguments. Must be name-value pairs.');
@@ -170,14 +129,11 @@ classdef FOOOFer < handle
         
         function next(obj)
 
-            if obj.iter >= obj.max_refit_iterations
+            if obj.iter >= obj.max_refit_n_iter
                 return;
 
             end
             obj.iter = obj.iter + 1;
-            obj.seeds.iter(end+1) = obj.iter;
-            obj.fits.iter(end+1) = obj.iter;
-            obj.gof.iter(end+1) = obj.iter;
             % update tables
 
         end
@@ -277,6 +233,58 @@ classdef FOOOFer < handle
             end
 
             y_hat = 10.^y_hat;
+
+        end
+
+        function append_to_results(obj, pv)
+
+            arguments
+
+                obj
+
+                pv.iter = []
+                pv.type = []
+                pv.seed = []
+                pv.fit  = []
+                pv.fit_flag = []
+                pv.fit_n_iter = []
+                pv.fit_n_func_eval = []
+                pv.fit_n_pcg_iter = []
+                pv.gof = []
+                pv.gof_metric = []
+                pv.modelSurvived = []
+
+                pv.nextEntry = false  
+                pv.step_from_current_entry = 0;
+                
+            end
+
+            fld_names = fieldnames(pv);
+
+            n_fld = numel(fld_names);
+            allowed_fieldnames = fieldnames(obj.results);
+            n_rows = numel(obj.results);
+
+            % if nextEntry=true, append the next entry unless it is the first entry
+            if pv.nextEntry & ~isempty(obj.results(1).iter)
+                iRow = n_rows + 1;
+            else
+                iRow = n_rows + pv.step_from_current_entry;
+            end
+
+            for ii = 1:n_fld
+
+                fldN = fld_names{ii};
+                valN = pv.(fldN);
+                if ~ismember(fldN, allowed_fieldnames) || isempty(valN) || all(ismissing(valN))
+                    continue;
+                end
+                
+                obj.results(iRow).(fldN) = valN;
+
+            end
+
+
 
         end
                 
@@ -442,7 +450,7 @@ classdef FOOOFer < handle
             spectrum_to_fit = max(spectrum_in_linear, eps);
             lower_bounds_ap = [0, 0, 0]; 
             upper_bounds_ap = [max(spectrum_in_linear), 100, max(freqs_in)];
-            if numel(initial_guesses_ap) == 3 && (initial_guesses_ap(3) < 1 || initial_guesses_ap(3) > max(freqs_in)) % no knee
+            if numel(initial_guesses_ap) == 3 && (initial_guesses_ap(3) <= 0 || initial_guesses_ap(3) >= max(freqs_in)) % no knee
 
                 obj_func = @obj.aperiodic_residual_function;
                 initial_guesses_ap(3) = [];
@@ -484,7 +492,7 @@ classdef FOOOFer < handle
 
 
             residuals = initial_flattened_spectrum;
-            bic_prev = obj.calculate_aic_(residuals, 4);
+            bic_prev = obj.calculate_bic_(residuals, 4);
             bics = nan(1,n_peaks+1);
             bics(1) = bic_prev;
             isPeakIn = false(1, n_peaks);
@@ -597,31 +605,29 @@ classdef FOOOFer < handle
             end
             y_data = y_data(:);% make column
 
-            min_excld_freq = 1; % before this value, weights remain intact
+            min_excld_freq = 0; % before this value, weights remain intact
                        
-            isAboveMin = x_data > min_excld_freq;
+            isAboveMinFreq = x_data > min_excld_freq;
 
             % res_scalar = 1.4826;
-            current_params = initial_guesses;
-            weights = 1./(x_data).^current_params(2);%ones(size(x_data));%ones(size(x_data));%1./x_data;%ones(size(y_data)); % weeights start equal
+            current_params = initial_guesses;            
             isExcld = false(size(x_data));
             options = optimoptions(@lsqnonlin, 'SpecifyObjectiveGradient', true);            
             for iter = 1:max_iter % start iterations
                 
-                weights =  ones(size(x_data));%1./(x_data).^current_params(2);
+                weights = ones(size(x_data));
                 weights(isExcld) = 0;
                 last_params = current_params;
                 % Nonlinear fit with the residual function with weights
                 current_params = lsqnonlin(@(p) obj_fun(p, x_data, y_data, weights), last_params, lower_bounds, upper_bounds, options);
                 % actual residuals without weights
                 residuals = obj_fun(current_params, x_data, y_data);
-                mad_resid = mad(residuals);
-                if mad_resid < eps, mad_resid = eps; end 
-                residuals(isAboveMin) = gen.robust_z(residuals(isAboveMin));
+                
+                residuals(isAboveMinFreq) = gen.robust_z(residuals(isAboveMinFreq));
 
                 % residuals = residuals / (res_scalar * mad_resid); %scale residuals
-                weights_to_zero = abs(residuals) > 4; %(1 - residuals.^2).^2; % recalculate weights based on residuals
-                isExcld = weights_to_zero >= 1 & isAboveMin;
+                weights_to_zero = residuals > 3.33; %(1 - residuals.^2).^2; % recalculate weights based on residuals
+                isExcld = weights_to_zero >= 1 & isAboveMinFreq;
                 % check for convergence between the first and last step
                 isConverged = sum((current_params - last_params).^2) / (sum(last_params.^2) + eps) < conv_tol;
                 if isConverged; break; end
@@ -681,7 +687,8 @@ classdef FOOOFer < handle
             [y_hat, J] = FOOOFer.aperiodic_function(estimates, freqs);
             residuals = weights .* (log10(y_data) - log10(y_hat));
 
-            % Jacobian matrix, first partial derivatives
+            % Jacobian matrix from the aperiodic function to the residual 
+            % function, first partial derivatives
             J = -J.* weights;
             
 
@@ -765,20 +772,22 @@ classdef FOOOFer < handle
         end
 
         function aic = calculate_aic_(residuals, n_param)
-
+            
+            residuals = residuals(:);
             n_sample = numel(residuals);
             rss = sum(residuals.^2);
-            log_lik = (-n_sample/2) * (log(2*pi*rss/n_sample) + 1);
-            aic = 2*n_param - 2*log(log_lik);
+            log_lik = -n_sample / 2 * (log(2*pi)+log(rss/n_sample) + 1);
+            aic = 2*n_param - 2*log_lik;
             if n_sample / n_param < 40
                 % correction for low sample sizes
-                aic = aic + (2*n_param*(n_param + 1)) / (n_sample - n_param + 1);
+                aic = aic + (2*n_param*(n_param + 1)) / (n_sample - n_param - 1);
                 
             end
         end
 
         function bic = calculate_bic_(residuals, n_param)
 
+            residuals = residuals(:);
             n_sample = numel(residuals);
             bic = log(n_sample) * n_param + n_sample .* log(sum(residuals.^2) ./ n_sample);
 
@@ -788,6 +797,7 @@ classdef FOOOFer < handle
 
             n_sample = numel(y);
             residuals = y - y_hat;
+            residuals = residuals(:);
             ss_res = sum(residuals.^2);
             ss_total = sum((y(:) - mean(y(:))).^2);
             if ss_total < 1e-12; r2 = 1; else; r2 = 1 - (ss_res / ss_total); end
@@ -878,7 +888,9 @@ classdef FOOOFer < handle
             catch e
 
                 %Idk yet
-                aaaa
+                cf_conv = 1;
+                amp_conv = 1;
+                bw_conv = 1;
 
             end
 
