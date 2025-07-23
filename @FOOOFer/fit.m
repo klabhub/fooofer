@@ -383,21 +383,6 @@ while obj.iter <= obj.max_refit_n_iter && ~isConverged
 
     end
 
-    % Subtract the periodic fit from the original data and feed it to the 
-    % next iteration
-
-    % p_fit = p_fitter.inner_model.predict();
-    % analysis_spectrum = original_spectrum - p_fit;
-    % if obj.iter == 0
-    %     n_peaks = obj.max_n_peaks;
-    %     includeKnee = false;
-    % else
-    %     n_peaks = numel(iKeepPeak);
-    %     includeKnee = ap_fitter.inner_model.includeKnee;
-    % end
-
-    % Check convergence
-
     if pv.plot
 
         plot(analysis_freqs, ap_fit+p_fit, line_styles((mod(obj.iter,2)==1)+1), LineWidth = 3);
