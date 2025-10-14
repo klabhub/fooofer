@@ -6,7 +6,7 @@ arguments
     freqs (:, 1) double
     spectrum (:, :) double
 
-    pv.included_frequencies (:, 2) double = gen.range(freqs) %all by default
+    pv.included_frequencies (:, 2) double = do.range(freqs) %all by default
     pv.excluded_frequencies (:, 2) double = obj.excluded_frequencies
     pv.apriori_peak_range = []
     
@@ -28,13 +28,13 @@ isFreqIn = freqs~=0;
 
 isFreqExcld = false(size(isFreqIn));
 for ii = 1:size(exclude_freq_range,1)
-    isFreqExcld = isFreqExcld | gen.ifwithin(freqs, exclude_freq_range(ii,:));
+    isFreqExcld = isFreqExcld | do.ifwithin(freqs, exclude_freq_range(ii,:));
 end
 
 
 if ~isempty(include_freq_range)
 
-    isFreqIn = isFreqIn & gen.ifwithin(freqs, include_freq_range);
+    isFreqIn = isFreqIn & do.ifwithin(freqs, include_freq_range);
 
 end
 
@@ -45,7 +45,7 @@ analysis_spectrum = original_spectrum;
 % weights
 if size(analysis_spectrum,2) > 15 % in the futue, make this optional
 
-    z_spectrum = gen.robust_z(analysis_spectrum, 2); % amount of noise depends on the frequency, calculate robust z per each frequency
+    z_spectrum = do.robust_z(analysis_spectrum, 2); % amount of noise depends on the frequency, calculate robust z per each frequency
     weights = abs(z_spectrum) < 5;
 else
     weights = 1;
@@ -53,7 +53,7 @@ else
 end
 isFreqExcldFromAp = false(size(analysis_freqs));
 for ii = 1:size(apriori_peak_range,1)
-    isFreqExcldFromAp = isFreqExcldFromAp | gen.ifwithin(analysis_freqs, apriori_peak_range(ii,:));
+    isFreqExcldFromAp = isFreqExcldFromAp | do.ifwithin(analysis_freqs, apriori_peak_range(ii,:));
 end
 
 obj.iter = 0; % Step 3 is the iterative fine-tuning of Step 1 and 2

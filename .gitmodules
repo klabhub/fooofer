@@ -1,6 +1,3 @@
-[submodule "generic_functions"]
-	path = generic_functions
-	url = git@github.com:mert-ozkan/generic_functions.git
 [submodule "model_builder"]
 	path = model_builder
 	url = git@github.com:mert-ozkan/model_builder.git
