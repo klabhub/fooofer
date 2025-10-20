@@ -1,4 +1,4 @@
 [submodule "model_builder"]
 	path = model_builder
-	url = git@github.com:mert-ozkan/model_builder.git
+	url = https://github.com/mert-ozkan/model_builder.git
 	branch = submod-dj
