@@ -393,9 +393,6 @@ while obj.iter <= obj.max_refit_n_iter && ~isConverged
 
     % continue to next iteration
     obj.next();
-    if obj.iter > 1
-        break;
-    end
     
 end
 
