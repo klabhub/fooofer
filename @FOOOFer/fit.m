@@ -28,6 +28,7 @@ arguments
     pv.plot = false
     pv.rng_seed = randi(2^8)
     pv.mode {mustBeMember(pv.mode, {'exploratory', 'apriori'})} = 'exploratory'
+    pv.conv_tol = 1e-3
 
 end
 
@@ -226,7 +227,7 @@ while self.iter <= self.max_refit_n_iter && ~hasConverged
     if self.iter >= (1+~runInitialFit)
         % check GOF convergence
         convergence =   curr_aic./prev_aic;        
-        hasConverged = abs(1 - convergence) < 1e-4;
+        hasConverged = abs(1 - convergence) < pv.conv_tol;
         if self.verbose
 
             fprintf("Iteration #%d\t, Convergence rate: %.2f%%\t, " + ...
