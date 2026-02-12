@@ -340,9 +340,23 @@ classdef FOOOFer < handle
                     noKnee = n_params == 3;
                     typeAp = strcmp(res_table.type,"aperiodic");
                     typeP = strcmp(res_table.type,"periodic");
+                    
+                    if ~isfield(restrictions,'iter')
+                        bestIter = res_table.iter == self.best_iter;
+                    else
+                        bestIter = true(size(hasKnee));
+                    end
 
-                    bestApKnee = find(mask & typeAp & hasKnee,1, 'last');
-                    bestAp = find(mask & typeAp & noKnee,1, 'last');
+                    bestApKnee = find(mask & typeAp & hasKnee & bestIter,1, 'last');
+                    bestAp = find(mask & typeAp & noKnee & bestIter,1, 'last');
+                    if isempty(bestApKnee)
+                        % release iter restriction
+                        bestApKnee = find(mask & typeAp & hasKnee,1, 'last');
+                    end
+
+                    if isempty(bestAp)
+                        bestAp = find(mask & typeAp & noKnee,1, 'last');
+                    end
                     bestP = find(mask & typeP,1, 'last');
                     mask = false(size(mask));
                     mask([bestAp, bestApKnee,bestP]) = true;
