@@ -30,6 +30,8 @@ arguments
     pv.reduced_model {validateReducedModel_(pv.reduced_model)} = struct([])
     pv.p_threshold (1,1) double {mustBePositive, mustBeLessThan(pv.p_threshold,1)} = .05
 
+    pv.refineIter = false; % if true, modelSurvived = 1; pv.lrt must be none and findPeaks must be false
+
 end
 try
 
@@ -99,6 +101,7 @@ if isLRT
     end
 
     if ~n_test_peaks && ~n_base_peaks
+       
         assert(pv.findPeaks, "BUG in previous input validation!");
         warning("Nothing to test survived peak finding algorithm! " + ...
             "Returning the null model.");
@@ -108,7 +111,7 @@ if isLRT
     end
 
 else
-
+    
     assert(~n_test_peaks && n_base_peaks, "BUG in previous input validation!")
 
 end
@@ -168,9 +171,10 @@ if ~isLRT
     res_args = namedargs2cell(res);
     self.append_to_results(res_args{:});
 
-    if ~strcmp(pv.lrt, "none") && pv.findPeaks
-        % if initially was set to do LRT test but initial estimates were
-        % reliably matching all of the empirical estimates LRT test is skipped.
+    if pv.refineIter || (~strcmp(pv.lrt, "none") && pv.findPeaks)
+        % if a refinement iteration or if it was initially set to do LRT 
+        % test but initial estimates were reliably matching all of the 
+        % empirical estimates LRT test is skipped.
         self.append_to_results(modelSurvived=true);
     end
 

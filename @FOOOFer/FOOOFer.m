@@ -24,6 +24,9 @@ classdef FOOOFer < handle
             lrt_comparison_row = [], chi2 = [], p = [], pseudo_r2 = [], ...
             modelSurvived = [])
 
+        performance_ = {};
+        best_iter
+
         verbose = true;
 
         % fmincon options
@@ -40,15 +43,19 @@ classdef FOOOFer < handle
 
     end
 
+    properties (Dependent)
+        performance_results
+    end
+
     properties (Dependent, Access = protected)
 
         n_results_row
-
+        
     end
   
     methods
         
-         [results, ap_fitter, p_fitter] = fit(obj, freqs, spectrum, include_freq_range, exclude_freq_range, apriori_peak_range)
+         [performance, results, ap_fitter, p_fitter] = fit(obj, freqs, spectrum, include_freq_range, exclude_freq_range, apriori_peak_range)
         
     end
 
@@ -89,10 +96,6 @@ classdef FOOOFer < handle
        
         function next(obj)
 
-            if obj.iter >= obj.max_refit_n_iter
-                return;
-
-            end
             obj.iter = obj.iter + 1;
             % update tables
 
@@ -152,8 +155,10 @@ classdef FOOOFer < handle
                 valN = pv.(fldN);
                 if ~ismember(fldN, allowed_fieldnames) || isempty(valN) || all(ismissing(valN))
                     continue;
+                elseif isgpuarray(valN)
+                    valN = gather(valN);
                 end
-                
+
                 obj.results(iRow).(fldN) = valN;
 
             end
@@ -366,6 +371,20 @@ classdef FOOOFer < handle
         function n = get.n_results_row(self)
             n = numel(self.results);
         end
+
+        function res = get.performance_results(self)
+
+            res = struct2table([self.performance_{:}]);
+
+        end
+
+        function i = get.best_iter(self)
+
+            res = self.performance_results;
+            [~, idx] = min(res.aic);
+            i = res.iter(idx);
+
+        end
     end
     %% Static Methods
     methods (Static)
@@ -433,7 +452,7 @@ function restrictions = modifyRetrieveRestrictions_(res, restrictions, mode)
             if isempty(n_iter)
                 error('retrieve:EmptyResults', 'Cannot use relative iterations on empty results.');
             end
-            restrictions.iter(isRelIter) = n_iter + restrictions.iter(isRelIter) + 1;
+            restrictions.iter(isRelIter) = n_iter + restrictions.iter(isRelIter);
         end
         mustBeNonnegative(restrictions.iter); %assert non-negativity
         mustBeInteger(restrictions.iter);
