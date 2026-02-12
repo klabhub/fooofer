@@ -214,7 +214,7 @@ else
    %%   
    skipFirstTest = ii == 0;
    last_surviving_model_index = self.n_results_row;
-   for ii = ii:n_test_peaks
+   for ii = ii:double(n_test_peaks)
 
        % determine the parameters to fit
        % use previous parameter fit if any, and append the testing

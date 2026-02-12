@@ -350,9 +350,11 @@ while self.iter <= self.max_refit_n_iter && ~hasConverged
 
     if self.iter >= (1+~runInitialFit) && lastSuccessIter ~= self.iter
         
-        dev_amount = init_p_res.fit.*.1;
-        init_p_res.fit = init_p_res.fit + randn(size(dev_amount)).*dev_amount;
-
+        if ~isempty(init_p_res) % if it is empty, no prior gueses are provided
+            dev_amount = init_p_res.fit.*.1;
+            init_p_res.fit = init_p_res.fit + randn(size(dev_amount)).*dev_amount;
+        end
+        
         dev_amount = ap_params.*.1;
         ap_params = ap_params + randn(size(dev_amount)).*dev_amount;
 
