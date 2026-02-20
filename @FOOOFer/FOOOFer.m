@@ -1,4 +1,4 @@
-classdef FOOOFer < handle
+classdef FOOOFer < matlab.mixin.Copyable
 
     % O1OFFitter Class for parameterizing neural power spectra.
     % Implements a FOOOF-like algorithm with multi-pass peak detection.
@@ -7,14 +7,33 @@ classdef FOOOFer < handle
     properties
 
         % Peak Fit Settings               
-        max_refit_n_iter = 10
+        max_refit_iter = 10
         
         min_peak_width (1,1) double = 1        
         max_n_peaks (1,1) double = 5              % Maximum number of peaks to fit per pass        
         min_peak_distance (1,1) double = 1.0 % Minimum Hz separation to keep distinct peaks
         min_peak_frequency (1,1) double = NaN
         max_peak_frequency (1,1) double   = NaN    
-        excluded_frequencies (:,2) double = []
+        excluded_frequencies (:,2) double {mustBeNonnegative} = []
+        included_frequencies (:, 2) double {mustBeNonnegative} = []
+        apriori_fooofer FOOOFer = FOOOFer.empty()% fooofer object (e.g. previous fitting 
+        % results on a neighboring channel's data) to use as estimates for the 
+        % current dataset
+        skip_aperiodic_lrt (1,1) logical = false % if true, must provide estimates or set includeKnee
+        max_peak_frequency_offset double {mustBeNonnegative, mustBeScalarOrEmpty} = [] % determines lower and upper bounds of center frequency from the initial guesses
+        peak_synch_tol  double {mustBeNonnegative, mustBeScalarOrEmpty} = 2
+        includeKnee (1,1) logical = false
+
+        stop_lrt_after (1,1) double {mustBeNonnegative, mustBeInteger} = 3; % refinement iterations start after this many iter
+        periodic_prior_updates_after (1,1) double {mustBeNonnegative, mustBeInteger}  = 2; % periodic priors update with previous guesses after this many iterations
+
+        gof_div_tol (1,1) double {mustBePositive} = 1e-2 % divergence tolerance
+        param_div_tol (1,1) double {mustBePositive} = 1e-2
+        prop_param_conv_tol (1,1) double {mustBeInRange(prop_param_conv_tol, 1e-16, 1)} = .9; % proportion of parameters to accept convergence
+
+        convergence_criteria {mustBeMember(convergence_criteria, {'gof', 'parameter'})} = 'parameter'
+
+        useGPU (1,1) logical = false
                 
         results = struct( ...            
             iter = [], type = [], seed = [], ...
@@ -24,15 +43,16 @@ classdef FOOOFer < handle
             lrt_comparison_row = [], chi2 = [], p = [], pseudo_r2 = [], ...
             modelSurvived = [])
 
-        performance_ = {};
-        best_iter
+        performance_ = {};        
+        rng_seed = randi(2^32-1)
 
-        verbose = true;
+        verbose = false;
 
         % fmincon options
         max_func_eval = 50
         max_fit_iter = 50;
         max_subproblem_iter = 100
+
 
 
     end
@@ -44,7 +64,8 @@ classdef FOOOFer < handle
     end
 
     properties (Dependent)
-        performance_results
+        performance
+        best_iter
     end
 
     properties (Dependent, Access = protected)
@@ -357,7 +378,7 @@ classdef FOOOFer < handle
                     if isempty(bestAp)
                         bestAp = find(mask & typeAp & noKnee,1, 'last');
                     end
-                    bestP = find(mask & typeP,1, 'last');
+                    bestP = find(mask & typeP & bestIter,1, 'last');
                     mask = false(size(mask));
                     mask([bestAp, bestApKnee,bestP]) = true;
 
@@ -386,7 +407,7 @@ classdef FOOOFer < handle
             n = numel(self.results);
         end
 
-        function res = get.performance_results(self)
+        function res = get.performance(self)
 
             res = struct2table([self.performance_{:}]);
 
@@ -394,11 +415,12 @@ classdef FOOOFer < handle
 
         function i = get.best_iter(self)
 
-            res = self.performance_results;
+            res = self.performance;
             [~, idx] = min(res.aic);
             i = res.iter(idx);
 
         end
+        
     end
     %% Static Methods
     methods (Static)

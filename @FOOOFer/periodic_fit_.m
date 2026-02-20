@@ -33,8 +33,6 @@ arguments
     pv.refineIter = false; % if true, modelSurvived = 1; pv.lrt must be none and findPeaks must be false
 
 end
-try
-
 %% --- Input Validation ---
 pv = configure_pv_(pv);
 
@@ -267,11 +265,6 @@ else
        end       
 
    end
-
-end
-catch e
-
-    disp(e)
 
 end
 end

@@ -6,41 +6,49 @@ arguments
     freqs (:, 1) double
     spectrum (:, :) double
 
-    pv.included_frequencies (:, 2) double = do.range(freqs) %all by default
+    pv.included_frequencies (:, 2) double = self.included_frequencies %all by default
     pv.excluded_frequencies (:, 2) double = self.excluded_frequencies
-    pv.apriori_peak_range = []
+    pv.apriori_peak_range = [] % exclude from fitting aperiodic
 
-    pv.apriori_fooofer FOOOFer = FOOOFer.empty()% fooofer object (e.g. previous fitting 
+    pv.apriori_fooofer FOOOFer = self.apriori_fooofer% fooofer object (e.g. previous fitting 
     % results on a neighboring channel's data) to use as estimates for the 
     % current dataset    
-    pv.skip_aperiodic_lrt = false % if true, must provide estimates
-    pv.max_peak_frequency_offset = NaN % determines bounds of center frequency from the initial guesses
-    pv.synch_tol = 2
-    pv.includeKnee = false
-    pv.lrt_knee = true % whether to compare aperiodic models w and w/o knee    
-    pv.lrt_p_threshold = .05;
+    pv.skip_aperiodic_lrt (1,1) logical = self.skip_aperiodic_lrt % if true, must provide estimates
+    pv.includeKnee (1,1) logical = self.includeKnee
+    pv.max_peak_frequency_offset double {mustBeNonnegative, mustBeScalarOrEmpty} = self.max_peak_frequency_offset% determines lower and upper bounds of center frequency from the initial guesses
+    pv.peak_synch_tol  double {mustBeNonnegative, mustBeScalarOrEmpty} = self.peak_synch_tol    
+    
 
-    pv.stop_lrt_after = 3;
-    pv.periodic_prior_updates_after = 2;
+    pv.stop_lrt_after (1,1) double {mustBeNonnegative, mustBeInteger} = self.stop_lrt_after;
+    pv.periodic_prior_updates_after (1,1) double {mustBeNonnegative, mustBeInteger} = self.periodic_prior_updates_after;
     
     pv.plot = false
-    pv.rng_seed = randi(2^8)
-    pv.gof_div_tol = 1e-2 % divergence tolerance
-    pv.param_div_tol = 1e-2
-    pv.prop_param_conv_tol = .9; % proportion of parameters to accept convergence
+    pv.rng_seed = self.rng_seed
+    pv.gof_div_tol (1,1) double {mustBePositive} = self.gof_div_tol % divergence tolerance
+    pv.param_div_tol (1,1) double {mustBePositive} = self.param_div_tol
+    pv.prop_param_conv_tol (1,1) double {mustBeInRange(pv.prop_param_conv_tol, 1e-16, 1)} = self.prop_param_conv_tol  % proportion of parameters to accept convergence
 
-    pv.convergence_criteria {mustBeMember(pv.convergence_criteria, {'gof', 'parameter'})} = 'gof'
+    pv.convergence_criteria {mustBeMember(pv.convergence_criteria, {'gof', 'parameter'})} = self.convergence_criteria
 
-    pv.useGPU = false
+    pv.useGPU (1,1) logical = self.useGPU
 
 end
+
 %% --- Name Value Validation --- 
 assert(pv.stop_lrt_after >= pv.periodic_prior_updates_after);
+
+data_axis = find(size(spectrum) == numel(freqs));
+if isscalar(data_axis) && data_axis ~= 1
+    spectrum = spectrum';
+end
 %%
 
 rng(pv.rng_seed);
 % Main fitting method.
 include_freq_range = pv.included_frequencies;
+if isempty(include_freq_range)
+    include_freq_range = do.range(freqs);
+end
 exclude_freq_range = pv.excluded_frequencies;
 apriori_peak_range = pv.apriori_peak_range;
 
@@ -64,14 +72,7 @@ original_spectrum = log10(spectrum(isFreqIn & ~isFreqExcld,:));
 analysis_spectrum = original_spectrum;
 % If there are more than 15 observations, determine outliers and assign
 % weights
-if size(analysis_spectrum,2) > 15 % in the futue, make this optional
-
-    z_spectrum = do.robust_z(analysis_spectrum, 2); % amount of noise depends on the frequency, calculate robust z per each frequency
-    weights = abs(z_spectrum) < 5;
-else
-    weights = 1;
-
-end
+weights = 1;
 isFreqExcldFromAp = false(size(analysis_freqs));
 for ii = 1:size(apriori_peak_range,1)
     isFreqExcldFromAp = isFreqExcldFromAp | do.ifwithin(analysis_freqs, apriori_peak_range(ii,:));
@@ -83,8 +84,16 @@ if  ~isempty(pv.apriori_fooofer)
 
     init_ap_res = pv.apriori_fooofer.retrieve('estimates', type='aperiodic');
     init_p_res = pv.apriori_fooofer.retrieve('estimates', type='periodic');
-    ap_params = [init_ap_res(1).fit,... % best model without knee
+    if numel(init_ap_res(1).fit)==3
+
+        ap_params = [init_ap_res(1).fit,... % best model without knee
             NaN; init_ap_res(2).fit];
+    else
+
+        ap_params = [init_ap_res(2).fit,... % best model without knee
+            NaN; init_ap_res(1).fit];
+    end
+    
     findPeaks = true;
     p_lrt = 'reduced';
     self.iter = 1; % Step 3 is the iterative fine-tuning of Step 1 and 2
@@ -157,7 +166,7 @@ hasConverged = false;
 runInitialFit = ~self.iter;
 lastSuccessIter = self.iter;
 refineIter = false;
-while self.iter <= self.max_refit_n_iter && ~hasConverged
+while self.iter <= self.max_refit_iter && ~hasConverged
 
     if pv.plot
         
@@ -215,7 +224,7 @@ while self.iter <= self.max_refit_n_iter && ~hasConverged
     %% --- Periodic Fit ---    
     [p_fitter, p_res] = self.periodic_fit_(p_fitter, ...
         findPeaks=findPeaks, lrt=p_lrt, reduced_model = init_p_res,...
-        synch_tol=pv.synch_tol, refineIter=refineIter);
+        synch_tol=pv.peak_synch_tol, refineIter=refineIter);
     p_mdl = p_fitter.inner_model;
     p_fit = p_mdl.predict(X=analysis_freqs);
     ap_mdl.Y = original_spectrum - p_fit;   
@@ -371,14 +380,12 @@ while self.iter <= self.max_refit_n_iter && ~hasConverged
 
     end
 
-    self.next();    
-
-    
+    self.next();     
     
 end
 
 results = self.results;
-performance = self.performance_results;
+performance = self.performance;
 end % fit()
 
 %% LOCAL HELPER FUNCTIONS
