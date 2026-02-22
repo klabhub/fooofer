@@ -321,7 +321,7 @@ while self.iter <= self.max_refit_iter && ~hasConverged
     end     
 
     %% --- Prep for next iter ---
-    if self.iter <= pv.stop_lrt_after
+    if self.iter < pv.stop_lrt_after
         
         ap_params = self.retrieve('estimates', 'fit', type ='aperiodic', ...
             iter = lastSuccessIter);
