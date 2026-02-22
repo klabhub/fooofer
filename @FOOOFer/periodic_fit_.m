@@ -10,22 +10,22 @@ arguments
 
     pv.p0 (1,:) double = [] % if provided uses these initial parameter
     % if findPeaks = true, it first attempts to match prior_p0 to empirical
-    % peaks, then appends no-match peak parameters to test_p0    
+    % peaks, then appends no-match peak parameters to test_p0
 
-    pv.apriori_fooofer FOOOFer = FOOOFer.empty() % if provided a FOOOFer object from a previous 
+    pv.apriori_fooofer FOOOFer = FOOOFer.empty() % if provided a FOOOFer object from a previous
     % model fit (e.g., a neighbpring channel fit), the algorithm will use
-    % the results to inform current fitting procedure by populating base_p0 
-    % If findPeaks = true, the algorithm will match the peak parameters from 
+    % the results to inform current fitting procedure by populating base_p0
+    % If findPeaks = true, the algorithm will match the peak parameters from
     % the apriori model and the peak finding algorithm estimates based on
     % the center frequency. Then appends no-match peak parameters to test_p0
 
     pv.synch_tol = 2 % when synching apriori peaks with empirical peaks
-    % periodic parameters from apriori_fit to data-driven estimates 
+    % periodic parameters from apriori_fit to data-driven estimates
     % match the center frequencies that are within this tol
 
-    pv.test_p0 (1,:) double = [] % if provided, tests these initial 
-    % parameters in stepwise LRT    
-    
+    pv.test_p0 (1,:) double = [] % if provided, tests these initial
+    % parameters in stepwise LRT
+
     pv.lrt {validateLRTInp_(pv.lrt)} = 'none' % if true it performs LRT
     pv.reduced_model {validateReducedModel_(pv.reduced_model)} = struct([])
     pv.p_threshold (1,1) double {mustBePositive, mustBeLessThan(pv.p_threshold,1)} = .05
@@ -56,7 +56,7 @@ emp_p0 = [];
 if pv.findPeaks
     % data-driven estimates
     mdl.n_peaks = self.max_n_peaks; % evokes reconstructing the model with maximum no of peaks
-    emp_p0 = fitter.estimate();    
+    emp_p0 = fitter.estimate();
 end
 test_p0 = emp_p0;
 
@@ -65,7 +65,7 @@ prior_p0 = retrieve_prior_p0_(pv.apriori_fooofer, pv.p0, pv.reduced_model);
 if ~isempty(prior_p0) && ~isempty(emp_p0)
 
     [prior_peak_p0, prior_nonpeak_p0] = arrange_params_(prior_p0);
-    [emp_p0, ~] = arrange_params_(emp_p0);
+    [emp_p0, test_nonpeak_p0] = arrange_params_(emp_p0);
 
     % match initial guesses with prior
     [p0, test_p0] = mdl.synch_peak_parameters_( ...
@@ -73,6 +73,8 @@ if ~isempty(prior_p0) && ~isempty(emp_p0)
     % append baseline and sigma
     if ~isempty(p0)
         p0 = [p0, prior_nonpeak_p0];
+    else
+        test_p0 = [test_p0, test_nonpeak_p0];
     end
 
 else
@@ -99,7 +101,7 @@ if isLRT
     end
 
     if ~n_test_peaks && ~n_base_peaks
-       
+
         assert(pv.findPeaks, "BUG in previous input validation!");
         warning("Nothing to test survived peak finding algorithm! " + ...
             "Returning the null model.");
@@ -109,7 +111,7 @@ if isLRT
     end
 
 else
-    
+
     assert(~n_test_peaks && n_base_peaks, "BUG in previous input validation!")
 
 end
@@ -140,7 +142,7 @@ if ~isLRT
     % Fit the model
     onset = tic;
     if self.verbose
-        
+
         fprintf('Fitting the periodic model with %d peaks.\n', n_base_peaks);
     end
 
@@ -170,103 +172,104 @@ if ~isLRT
     self.append_to_results(res_args{:});
 
     if pv.refineIter || (~strcmp(pv.lrt, "none") && pv.findPeaks)
-        % if a refinement iteration or if it was initially set to do LRT 
-        % test but initial estimates were reliably matching all of the 
+        % if a refinement iteration or if it was initially set to do LRT
+        % test but initial estimates were reliably matching all of the
         % empirical estimates LRT test is skipped.
         self.append_to_results(modelSurvived=true);
     end
 
 else
-%%
-   if ~strcmp(pv.lrt, 'reduced')
-       % NULL model
-       res = retrieve_null_model_(self, mdl);
-   elseif isempty(p0) % findPeaks=false 
-       res = pv.reduced_model;
-   else
-       res.fit = p0; % update apriori estimates
-   end
-%%
-   % --- Stepwise LRT ---
-   %
-   % We will fit the model one step at a time and compare the new model
-   % to the reduced model. Steps:
-   % - If lrt = 'reduced' and ~isempty(p0), first iteration ii = 0 and
-   %    first predict_fit_(...,p0 = p0); else, res must be non-empty, 
-   %    ii=1 and first predict_fit_(...,p0 = first_test_peaks)
-   % - lrt is only done when ii > 0
 
-   ii = ~(strcmp(pv.lrt,'reduced') && ~isempty(p0));
-   % params in each cell will be tested at each iteration
-   test_param_order = cell(n_test_peaks + ~ii,1);   
-   
-   [test_peak_params, test_nonpeak_params] = arrange_params_(test_p0);
-   test_param_order(1+~ii:end) = mat2cell(test_peak_params, ...
-       ones(1, n_test_peaks), 3);
-   if ~ii       
-       test_param_order{1} = [];       
-   else
-       test_param_order{1} = [test_param_order{1}, test_nonpeak_params];
-   end
+    if ~strcmp(pv.lrt, 'reduced')
+        % NULL model
+        res = retrieve_null_model_(self, mdl);
+    elseif isempty(p0) % findPeaks=false
+        res = pv.reduced_model;
+    else
+        res.fit = p0; % update apriori estimates
+    end
+    %%
+    % --- Stepwise LRT ---
+    %
+    % We will fit the model one test peak at a time and compare the new model
+    % to the reduced model. Steps:
+    % - If lrt = 'reduced' and ~isempty(p0), first iteration ii = 0 and
+    %    first periodic_fit_(...,p0 = p0); else, res must be non-empty,
+    %    ii=1 and first periodic_fit_(...,p0 = first_test_peaks)
+    % - lrt is only done when ii > 0
 
-   %%   
-   skipFirstTest = ii == 0;
-   last_surviving_model_index = self.n_results_row;
-   for ii = ii:double(n_test_peaks)
+    ii = ~(strcmp(pv.lrt,'reduced') && ~isempty(p0));
+    % params in each cell will be tested at each iteration
+    test_param_order = cell(n_test_peaks + ~ii,1);
 
-       % determine the parameters to fit
-       % use previous parameter fit if any, and append the testing
-       % parameters, test_nonpeak_params will only be used if res.fit does
-       % not contain baseline and sigma params
-       pN = join_params_(res.fit, test_param_order{ii+skipFirstTest});
+    [test_peak_params, test_nonpeak_params] = arrange_params_(test_p0);
+    test_param_order(1+~ii:end) = mat2cell(test_peak_params, ...
+        ones(1, n_test_peaks), 3);
+    if ~ii
+        test_param_order{1} = [];
+    else
+        test_param_order{1} = [test_param_order{1}, test_nonpeak_params];
+    end
 
-       if self.verbose
-           fprintf('\n %d. ', ii+skipFirstTest);
-       end
-       % Fit the model
-       [alt_fitter, alt_res] = self.periodic_fit_(fitter.copy(), ...
-           p0=pN, lrt = 'none');
-       % Test
-       if ii % LRT only when the null model stats are stored in res
-           % compare the reduced model to the alternative model
-           [p, chi_stat, eff] = self.do_lrt_(res.gof, alt_res.gof, ...
-               numel(res.fit), numel(alt_res.fit), mdl.sample_size);
+    %%
+    skipFirstTest = ii == 0;
+    last_surviving_model_index = self.n_results_row;
+    for ii = ii:double(n_test_peaks)
 
-           % alternative model survives if:
-           % p < p_threshold
-           % fit_flag is positive (success)
-           % alt_aic < reduced_aic
-           altModelSurvived = ...
-               p < pv.p_threshold && res.fit_flag > 0  && alt_res.gof < res.gof;
-           
-           % update current model results
-           self.append_to_results(chi2 = chi_stat, ...
-               p=p, pseudo_r2=eff,...
-               modelSurvived = altModelSurvived,...
-               lrt_comparison_row = last_surviving_model_index)
-           % update simple model results
-           self.append_to_results( ...
-               modelSurvived = ~altModelSurvived, ...
-               row_index = last_surviving_model_index, ...
-               lrt_comparison_row = self.n_results_row);
+        % determine the parameters to fit
+        % use previous parameter fit if any, and append the testing
+        % parameters, test_nonpeak_params will only be used if res.fit does
+        % not contain baseline and sigma params
+        pN = join_params_(res.fit, test_param_order{ii+skipFirstTest});
 
-           if altModelSurvived               
-               last_surviving_model_index = self.n_results_row;
-           end
+        if self.verbose
+            fprintf('\n %d. ', ii+skipFirstTest);
+        end
+        % Fit the model
+        [alt_fitter, alt_res] = self.periodic_fit_(fitter.copy(), ...
+            p0=pN, lrt = 'none');
+        % Test
+        if ii % LRT only when the null model stats are stored in res
+            % compare the reduced model to the alternative model
+            [p, chi_stat, eff] = self.do_lrt_(res.gof, alt_res.gof, ...
+                numel(res.fit), numel(alt_res.fit), mdl.sample_size);
 
-       elseif skipFirstTest
-           last_surviving_model_index = self.n_results_row; % null model
-       end
+            % alternative model survives if:
+            % p < p_threshold
+            % fit_flag is positive (success)
+            % alt_aic < reduced_aic
+            altModelSurvived = ...
+                p < pv.p_threshold && res.fit_flag > 0  && alt_res.gof < res.gof;
 
-       % update the initial null model || the surviving model
-       if ~ii || altModelSurvived 
-           res = alt_res;
-           fitter = alt_fitter;           
-       end       
+            % update current model results
+            self.append_to_results(chi2 = chi_stat, ...
+                p=p, pseudo_r2=eff,...
+                modelSurvived = altModelSurvived,...
+                lrt_comparison_row = last_surviving_model_index)
+            % update simple model results
+            self.append_to_results( ...
+                modelSurvived = ~altModelSurvived, ...
+                row_index = last_surviving_model_index, ...
+                lrt_comparison_row = self.n_results_row);
 
-   end
+            if altModelSurvived
+                last_surviving_model_index = self.n_results_row;
+            end
+
+        elseif skipFirstTest % only when ii == 0
+            last_surviving_model_index = self.n_results_row; % null model
+        end
+
+        % update the initial null model || the surviving model
+        if ~ii || altModelSurvived
+            res = alt_res;
+            fitter = alt_fitter;
+        end
+
+    end
 
 end
+
 end
 
 %% LOCAL HELPER FUNCTIONS
@@ -310,7 +313,7 @@ end
 n_nonpeak_params = mod(numel(p0),3);
 if n_nonpeak_params
     nonpeak_params = p0(end-1:end);
-    p0 = p0(1:end-2);    
+    p0 = p0(1:end-2);
 end
 
 peak_params = reshape(p0,[],3);
@@ -318,16 +321,16 @@ end
 
 function p_all = join_params_(p0, p1)
 
- [peak_p0, nonpeak_p0] = arrange_params_(p0);
- [peak_p1, nonpeak_p1] = arrange_params_(p1);
+[peak_p0, nonpeak_p0] = arrange_params_(p0);
+[peak_p1, nonpeak_p1] = arrange_params_(p1);
 
- nonpeak_p = nonpeak_p0;
- if isempty(nonpeak_p)
-     nonpeak_p = nonpeak_p1;
- end
+nonpeak_p = nonpeak_p0;
+if isempty(nonpeak_p)
+    nonpeak_p = nonpeak_p1;
+end
 
- p_all = [peak_p0; peak_p1];
- p_all = [p_all(:)', nonpeak_p(:)'];
+p_all = [peak_p0; peak_p1];
+p_all = [p_all(:)', nonpeak_p(:)'];
 
 end
 
@@ -346,7 +349,7 @@ end
 function pv = configure_pv_(pv)
 
 if pv.findPeaks && strcmp(pv.lrt, 'none')
-    pv.lrt = 'null';    
+    pv.lrt = 'null';
     warning("Changing lrt to 'null' since findPeaks is set to true.")
 end
 
