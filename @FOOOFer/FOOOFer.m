@@ -184,6 +184,8 @@ classdef FOOOFer < matlab.mixin.Copyable
 
             end
 
+            assert(all(diff([obj.results.iter])>=0), "BUG! Iteration order mixed up!");
+
         end
 
         function res = retrieve(self, selection, restrictions)
@@ -260,7 +262,9 @@ classdef FOOOFer < matlab.mixin.Copyable
             % 2. Validate and Modify Restrictions based on Mode
             % This handles negative iterations and mode-specific constraints (e.g., survived=true)
             restrictions = modifyRetrieveRestrictions_(res_struct, restrictions, selection_mode);
-
+            if strcmp(selection_mode, 'final')
+                restrictions.iter = self.best_iter;
+            end
             % Convert to table for easier column-wise operations
             res_table = struct2table(res_struct, 'AsArray', true);
 
@@ -303,7 +307,7 @@ classdef FOOOFer < matlab.mixin.Copyable
 
             % 4. Apply special logic for 'best' mode
             % 'best' includes survivors AND the specific aperiodic models they were compared against (LRT)
-            if strcmpi(selection_mode, 'best') || strcmpi(selection_mode, 'estimates')
+            if ismember(selection_mode, {'best', 'estimates', 'final'})
                 % First, apply the standard mask to find the 'surviving' candidates within restrictions
                 % Note: modifyRetrieveRestrictions_ does NOT enforce modelSurvived=true for 'best',
                 % so we check it here.
@@ -351,32 +355,39 @@ classdef FOOOFer < matlab.mixin.Copyable
                 % Final mask for 'best': Survivors + their specific alternatives
                 mask = survivor_mask | is_lrt_target;
 
-                if strcmpi(selection_mode, 'estimates')
-                    % retrieves best final estimates for
+                if ~strcmpi(selection_mode, 'best')
+                    % 'estimates' retrieves best final estimates for
                     % 1. aperiodic without knee
                     % 2. aperiodic with knee
                     % 3. periodic
+                    % 'final' retrieves best final estimates from the
+                    % best_iter
                     n_params = cellfun(@(x) numel(x), res_table.fit);
                     hasKnee = n_params == 4;
                     noKnee = n_params == 3;
                     typeAp = strcmp(res_table.type,"aperiodic");
                     typeP = strcmp(res_table.type,"periodic");
-                    
+
                     if ~isfield(restrictions,'iter')
                         bestIter = res_table.iter == self.best_iter;
                     else
                         bestIter = true(size(hasKnee));
                     end
+                    
+                    if strcmpi(selection_mode, 'estimates')
+                        bestApKnee = find(mask & typeAp & hasKnee & bestIter,1, 'last');
+                        bestAp = find(mask & typeAp & noKnee & bestIter,1, 'last');
+                        if isempty(bestApKnee)
+                            % release iter restriction
+                            bestApKnee = find(mask & typeAp & hasKnee,1, 'last');
+                        end
 
-                    bestApKnee = find(mask & typeAp & hasKnee & bestIter,1, 'last');
-                    bestAp = find(mask & typeAp & noKnee & bestIter,1, 'last');
-                    if isempty(bestApKnee)
-                        % release iter restriction
-                        bestApKnee = find(mask & typeAp & hasKnee,1, 'last');
-                    end
-
-                    if isempty(bestAp)
-                        bestAp = find(mask & typeAp & noKnee,1, 'last');
+                        if isempty(bestAp)
+                            bestAp = find(mask & typeAp & noKnee,1, 'last');
+                        end
+                    else
+                        bestAp = find(mask & typeAp & bestIter & survived_col);
+                        bestApKnee = [];
                     end
                     bestP = find(mask & typeP & bestIter,1, 'last');
                     mask = false(size(mask));
@@ -501,7 +512,10 @@ function restrictions = modifyRetrieveRestrictions_(res, restrictions, mode)
         restrictions.modelSurvived = true;        
     elseif strcmpi(mode, 'best') || strcmp(mode, "estimates")
         % Compatibility fix: Check if user provided restriction
-        assert(isempty(restrictions.modelSurvived), "If selection is 'best', cannot restrict modelSurvived!")
+        assert(isempty(restrictions.modelSurvived), "If selection is 'best', cannot restrict modelSurvived!");
+    elseif strcmpi(mode, 'final')
+        % results from the best iter
+        assert(isempty(restrictions.iter), "If selection is `'final'`, results will be of the `best_iter`! Cannot specify `iter` again!");
     end
 
     % remove empty fields from restrictions to avoid looping over them later
@@ -523,7 +537,7 @@ function s = modifyRetrieveSelectionArgs_(selection, n_rows, results_fields)
     s.final = 0;
 
     n_select = numel(selection);
-    modes = ["best", "survived", "estimates", "all"];
+    modes = ["best", "survived", "estimates", "final", "all"];
     assert(n_select <= numel(modes), "You must only select indices, variables, mode and each of them once!");
 
     [selectedIndices, selectedFields, selectedMode] = deal(false);
