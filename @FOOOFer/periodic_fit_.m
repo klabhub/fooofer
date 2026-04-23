@@ -28,7 +28,7 @@ arguments
 
     pv.lrt {validateLRTInp_(pv.lrt)} = 'none' % if true it performs LRT
     pv.reduced_model {validateReducedModel_(pv.reduced_model)} = struct([])
-    pv.p_threshold (1,1) double {mustBePositive, mustBeLessThan(pv.p_threshold,1)} = .05
+    pv.lrt_p_threshold (1,1) double {mustBePositive, mustBeLessThan(pv.lrt_p_threshold,1)} = self.lrt_p_threshold
 
     pv.refineIter = false; % if true, modelSurvived = 1; pv.lrt must be none and findPeaks must be false
 
@@ -120,7 +120,6 @@ if ~isLRT
     % Scenario 1
     % PROMPT: Check if this assertion could ever be violated.
     assert(~isempty(p0) && isempty(test_p0));
-
     % reconfigure the model
     mdl.n_peaks = n_base_peaks;
     % estimate parameter boundaries
@@ -139,6 +138,8 @@ if ~isLRT
         'MaxFunctionEvaluations', self.max_func_eval, ...
         'MaxIterations', self.max_fit_iter);
 
+    % Order peaks
+    [A, b] = fitter.inner_model.return_linineq_for_peak_centers(p0, self.min_peak_width/2);
     % Fit the model
     onset = tic;
     if self.verbose
@@ -147,7 +148,7 @@ if ~isLRT
     end
 
     [params, ~, flag, op] = fmincon(@(p) fitter.objective_function(p), ...
-        p0, [], [], [], [], lb, ub, [], optimopts);
+        p0, A, b, [], [], lb, ub, [], optimopts);
     dur = toc(onset);
     if self.verbose, fprintf("\tTook %.2f seconds.\n", dur); end
 
@@ -221,6 +222,7 @@ else
         % parameters, test_nonpeak_params will only be used if res.fit does
         % not contain baseline and sigma params
         pN = join_params_(res.fit, test_param_order{ii+skipFirstTest});
+        % pN(end-2) = 0; % set baseline estimate to 0
 
         if self.verbose
             fprintf('\n %d. ', ii+skipFirstTest);
@@ -239,7 +241,7 @@ else
             % fit_flag is positive (success)
             % alt_aic < reduced_aic
             altModelSurvived = ...
-                p < pv.p_threshold && res.fit_flag > 0  && alt_res.gof < res.gof;
+                p < pv.lrt_p_threshold && res.fit_flag > 0  && alt_res.gof < res.gof;
 
             % update current model results
             self.append_to_results(chi2 = chi_stat, ...

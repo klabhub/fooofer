@@ -20,6 +20,7 @@ classdef FOOOFer < matlab.mixin.Copyable
         % results on a neighboring channel's data) to use as estimates for the 
         % current dataset
         skip_aperiodic_lrt (1,1) logical = false % if true, must provide estimates or set includeKnee
+        lrt_p_threshold {mustBePositive, mustBeLessThan(lrt_p_threshold,1)} = .05
         max_peak_frequency_offset double {mustBeNonnegative, mustBeScalarOrEmpty} = [] % determines lower and upper bounds of center frequency from the initial guesses
         peak_synch_tol  double {mustBeNonnegative, mustBeScalarOrEmpty} = 2
         includeKnee (1,1) logical = false
@@ -52,9 +53,6 @@ classdef FOOOFer < matlab.mixin.Copyable
         max_func_eval = 50
         max_fit_iter = 50;
         max_subproblem_iter = 100
-
-
-
     end
 
     properties (SetAccess = protected)

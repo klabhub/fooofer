@@ -294,6 +294,8 @@ while self.iter <= self.max_refit_iter && ~hasConverged
                 hasConverged = hasParamConverged;
 
         end
+        % convergence only matters after refinement
+        hasConverged = hasConverged & refineIter;
 
         if self.verbose
 
@@ -334,7 +336,6 @@ while self.iter <= self.max_refit_iter && ~hasConverged
             iter = lastSuccessIter);
         ap_params = ap_params.fit;
         ap_lrt = false;
-        refineIter = true;
     end
 
     if self.iter >= pv.stop_lrt_after
@@ -354,8 +355,7 @@ while self.iter <= self.max_refit_iter && ~hasConverged
         findPeaks = true;
         p_lrt = 'reduced';
                
-    end
-
+    end  
 
     if self.iter >= (1+~runInitialFit) && lastSuccessIter ~= self.iter
         
@@ -369,8 +369,8 @@ while self.iter <= self.max_refit_iter && ~hasConverged
 
         % change aperiodic model data, it should be the same as
         % at the begining of lastSuccessIter
-        ap_fit = p_mdl.predict(prev_p_res.fit(1:end-1));
-        ap_mdl.Y = original_spectrum - ap_fit;
+        p_fit = p_mdl.predict(prev_p_res.fit(1:end-1));
+        ap_mdl.Y = original_spectrum - p_fit;
 
     else
 
@@ -380,8 +380,7 @@ while self.iter <= self.max_refit_iter && ~hasConverged
 
     end
 
-    self.next();     
-    
+    self.next();
 end
 
 results = self.results;

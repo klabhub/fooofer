@@ -11,7 +11,7 @@ arguments (Input)
     % intercept2, exponent2, knee2]
 
     pv.lrt (1,1) logical = false % LRT to determine knee    
-    pv.lrt_p_threshold {mustBePositive, mustBeLessThan(pv.lrt_p_threshold, 1)} = .05
+    pv.lrt_p_threshold {mustBePositive, mustBeLessThan(pv.lrt_p_threshold, 1)} = self.lrt_p_threshold
     pv.refineIter = false % model always survives, if true lrt must be set to false
 end
 
