@@ -30,7 +30,9 @@ arguments
     pv.reduced_model {validateReducedModel_(pv.reduced_model)} = struct([])
     pv.lrt_p_threshold (1,1) double {mustBePositive, mustBeLessThan(pv.lrt_p_threshold,1)} = self.lrt_p_threshold
 
-    pv.refineIter = false; % if true, modelSurvived = 1; pv.lrt must be none and findPeaks must be false
+    pv.refineIter = false % if true, modelSurvived = 1; pv.lrt must be none and findPeaks must be false
+
+    pv.globalSearch = false
 
 end
 %% --- Input Validation ---
@@ -147,8 +149,26 @@ if ~isLRT
         fprintf('Fitting the periodic model with %d peaks.\n', n_base_peaks);
     end
 
-    [params, ~, flag, op] = fmincon(@(p) fitter.objective_function(p), ...
-        p0, A, b, [], [], lb, ub, [], optimopts);
+    if pv.globalSearch
+
+        gs = GlobalSearch(Display="iter");
+        problem = createOptimProblem("fmincon",...
+            objective = @(p) fitter.objective_function(p),...
+            Aineq=A, bineq=b, x0=p0, lb=lb, ub=ub, options=optimopts);
+
+        [params, ~, flag, op] = run(gs, problem);
+
+        fit_n_iter = [];
+        fit_n_pcg_iter = [];
+
+    else
+
+        [params, ~, flag, op] = fmincon(@(p) fitter.objective_function(p), ...
+            p0, A, b, [], [], lb, ub, [], optimopts);
+        
+        fit_n_iter = op.iterations;
+        fit_n_pcg_iter = op.cgiterations;
+    end
     dur = toc(onset);
     if self.verbose, fprintf("\tTook %.2f seconds.\n", dur); end
 
@@ -162,9 +182,9 @@ if ~isLRT
         seed = p0, ...
         fit = params, ...
         fit_flag=flag, ...
-        fit_n_iter = op.iterations, ...
+        fit_n_iter = fit_n_iter, ...
         fit_n_func_eval = op.funcCount, ...
-        fit_n_pcg_iter = op.cgiterations, ...
+        fit_n_pcg_iter = fit_n_pcg_iter, ...
         fit_dur = dur,...
         gof=aic1, ...
         gof_metric='aic', ...
@@ -222,7 +242,7 @@ else
         % parameters, test_nonpeak_params will only be used if res.fit does
         % not contain baseline and sigma params
         pN = join_params_(res.fit, test_param_order{ii+skipFirstTest});
-        % pN(end-2) = 0; % set baseline estimate to 0
+        % pN(end-1) = 0; % set baseline estimate to 0
 
         if self.verbose
             fprintf('\n %d. ', ii+skipFirstTest);

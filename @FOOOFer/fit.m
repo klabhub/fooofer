@@ -166,6 +166,7 @@ hasConverged = false;
 runInitialFit = ~self.iter;
 lastSuccessIter = self.iter;
 refineIter = false;
+globalSch = false;
 while self.iter <= self.max_refit_iter && ~hasConverged
 
     if pv.plot
@@ -206,7 +207,7 @@ while self.iter <= self.max_refit_iter && ~hasConverged
     %% --- Aperiodic Fit ---    
     [ap_fitter, ap_res] = self.aperiodic_fit_(ap_fitter, ...
         lrt = ap_lrt,...
-        p0 = ap_params, refineIter=refineIter);
+        p0 = ap_params, refineIter=refineIter, globalSearch=globalSch);
     ap_mdl = ap_fitter.inner_model;
 
     %% --- Prep for Periodic Fit ---
@@ -224,7 +225,7 @@ while self.iter <= self.max_refit_iter && ~hasConverged
     %% --- Periodic Fit ---    
     [p_fitter, p_res] = self.periodic_fit_(p_fitter, ...
         findPeaks=findPeaks, lrt=p_lrt, reduced_model = init_p_res,...
-        synch_tol=pv.peak_synch_tol, refineIter=refineIter);
+        synch_tol=pv.peak_synch_tol, refineIter=refineIter, globalSearch=globalSch);
     p_mdl = p_fitter.inner_model;
     p_fit = p_mdl.predict(X=analysis_freqs);
     ap_mdl.Y = original_spectrum - p_fit;   
@@ -356,6 +357,8 @@ while self.iter <= self.max_refit_iter && ~hasConverged
         p_lrt = 'reduced';
                
     end  
+
+    globalSch = self.iter == self.stop_lrt_after; % run global search in the next iter
 
     if self.iter >= (1+~runInitialFit) && lastSuccessIter ~= self.iter
         
