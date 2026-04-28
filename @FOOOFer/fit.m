@@ -358,7 +358,7 @@ while self.iter <= self.max_refit_iter && ~hasConverged
                
     end  
 
-    globalSch = self.iter == self.stop_lrt_after; % run global search in the next iter
+    % globalSch = self.iter == self.stop_lrt_after; % run global search in the next iter
 
     if self.iter >= (1+~runInitialFit) && lastSuccessIter ~= self.iter
         
